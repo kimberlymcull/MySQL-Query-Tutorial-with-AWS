@@ -1,0 +1,134 @@
+---
+title: "Querying from a MySQL Database"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse=TRUE, message=FALSE, include=TRUE)
+```
+
+This tutorial will walk through querying a MySQL database. We will use a database that has already been created in the cloud with Amazon Web Services (AWS). The database contains information on movies and ratings. To begin, we will need to install necessary libraries: 
+
+```{r}
+#Allows connection to MYSQL database
+library(RMySQL)
+#Organizes query output into a table
+library(knitr)
+```
+
+Then, we will need to connect to the database:
+
+```{r}
+# Set up database connection
+host="culllab2database.cuocw7whxkhb.us-east-2.rds.amazonaws.com"  # replace with your endpoint, dropping ":3306"
+port=3306    
+dbname="Lab2Database"
+user="Lab2Database"
+password="DataAnalytics"    # replace with your password
+mydb = dbConnect(MySQL(), user=user, password=password, dbname=dbname, host=host)
+```
+
+Once a connection has bee established, we can explore what information the database contains:
+
+```{r}
+dbListTables(mydb)
+```
+
+This database contains five data sets. We are only interested in four, for the purposes of this lab: "links", "movies", "ratings", and "tags". In order to query the database, we need to understand what information is found within each of these data sets:
+
+```{r}
+#become familiar with columns in data sets
+dbListFields(mydb, 'movies')
+dbListFields(mydb, 'links')
+dbListFields(mydb, 'ratings')
+dbListFields(mydb, 'tags')
+```
+
+Now that we know the makeup of the MYSQL database and the data sets of interest, we can begin querying to answer questions.
+
+Question 1: What are the top 10 highest rated movies?
+
+To answer this question, we will only need two of the data sets, "movies" and "ratings". Reviewers rate movies on a 1-5 scale with 5 being the highest rating possible. We want to develop a query that considers a movie with an average rating of 5 after 50 reviews a more highly rated movie than one also averaging a rating of 5, but with only 1 review. Below is the query that produces the top 10 highest rated movies with priority given to the movies with the highest number of reviews. *Note: After initial investigation of the data sets, it was determined that there were many movies that were rated at 5 and had multiple reviews (versus many averages the fall slightly below 5). With this information, it was not necessary to indicate that the rating had to be greater than or equal to 4, for example. To expedite the query and pull only data that we need to answer question 1, the rating average we were looking for was equal to 5.*
+
+```{r}
+#Create query
+query1 = "SELECT movies.title As Movie_Title, AVG(ratings.rating), Count(*) As Number_of_Raters 
+FROM ratings, movies 
+WHERE movies.movieId=ratings.movieId AND ratings.rating=5
+GROUP BY ratings.movieId
+ORDER BY Number_of_Raters DESC
+LIMIT 10"
+
+#Send request and save resulting data as 'data'
+sql_request = dbSendQuery(mydb, query1) 
+data = fetch(sql_request)        
+dbClearResult(sql_request) #required to close out request, will return TRUE 
+
+#Prints information in clean table format
+kable(data)     
+```
+
+Question 2: What is the most tagged movie and what tags are associated with it?
+
+This question will require information from the "movies" and "tags" databases. We will count the number of tags for each movie, place movies in order of number of tags and return the most tagged movie.
+
+```{r}
+#Create query
+query2= "SELECT movies.title As Movie_Title, Count(*) As Number_of_Tags, tags.tag As Movie_Tags
+FROM movies, tags
+WHERE movies.movieId=tags.movieId
+GROUP BY Movie_Title
+ORDER BY Number_of_Tags DESC
+LIMIT 1"
+
+#Send request and save resulting data as 'data'
+sql_request = dbSendQuery(mydb, query2) 
+data = fetch(sql_request)        
+dbClearResult(sql_request)  #required to close out request, will return TRUE 
+
+#Prints information in clean table format
+kable(data)
+```
+
+Now that we have identified the most tagged movie, we will query for that specific movie and pull the associated tags.
+
+```{r}
+#Create query
+query3="SELECT movies.title As Movie_Title, Count(*) As Number_of_Tags, tags.tag As Movie_Tags
+FROM movies, tags
+WHERE movies.movieId=tags.movieId AND movies.title= 'Star Wars: Episode IV - A New Hope (1977)'
+GROUP BY Movie_Tags
+ORDER BY Number_of_Tags DESC"
+
+#Send request and save resulting data as 'data'
+sql_request = dbSendQuery(mydb, query3) 
+data = fetch(sql_request)        
+dbClearResult(sql_request)  #required to close out request, will return TRUE  
+
+#Prints information in clean table format        
+kable(data)
+```
+
+Question 3: What are the top 3 movies in the "Action" genre?
+
+For this query, we will need to subset the movies that are described as "Action" under genre in the "movies' data set. Since movies can have multiple genres, we will need to use the LIKE function to return movies that include the genre of interest. This query requires the data sets "movies" and "ratings" and takes a similar approach to Question 1 when ranking the ratings of the "Action" movies. *Note: The "Action" genre can easily be changed to a search for any particular genre by simply ammending the LIKE line of code to read, "LIKE '%Desired_Genre%'".*
+
+```{r}
+#Create query
+query4="SELECT movies.title As Movie_Titles, movies.genres As Movie_Genre, AVG(ratings.rating) As Average_Rating, Count(*) As Number_of_Raters
+FROM movies, ratings
+WHERE movies.movieId=ratings.movieId AND ratings.rating=5 AND movies.genres LIKE '%Action%'
+GROUP BY ratings.movieId
+ORDER BY Number_of_Raters DESC
+LIMIT 3"
+
+#Send request and save resulting data as 'data'
+sql_request = dbSendQuery(mydb, query4) 
+data = fetch(sql_request)        
+dbClearResult(sql_request) #required to close out request, will return TRUE  
+
+#Prints information in clean table format         
+kable(data)
+```
+
+
